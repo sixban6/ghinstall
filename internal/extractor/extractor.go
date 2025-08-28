@@ -17,7 +17,13 @@ type Extractor interface {
 
 type MultiExtractor struct{}
 
-func New() *MultiExtractor {
+func New() Extractor {
+	// Return system extractor with fallback for best performance
+	//return NewSystemWithFallback()
+	return NewOptimized()
+}
+
+func NewLegacy() *MultiExtractor {
 	return &MultiExtractor{}
 }
 
@@ -92,14 +98,14 @@ func (e *MultiExtractor) extractTarEntry(reader *tar.Reader, header *tar.Header,
 	path := filepath.Join(dst, header.Name)
 	cleanedDst := filepath.Clean(dst)
 	cleanedPath := filepath.Clean(path)
-	
+
 	// Skip the current directory entry
 	if header.Name == "./" || header.Name == "." {
 		return nil
 	}
-	
+
 	// Prevent directory traversal attacks
-	if !strings.HasPrefix(cleanedPath, cleanedDst) || 
+	if !strings.HasPrefix(cleanedPath, cleanedDst) ||
 		(cleanedPath != cleanedDst && !strings.HasPrefix(cleanedPath, cleanedDst+string(os.PathSeparator))) {
 		return fmt.Errorf("invalid file path: %s", header.Name)
 	}
@@ -139,14 +145,14 @@ func (e *MultiExtractor) extractZipEntry(file *zip.File, dst string) error {
 	path := filepath.Join(dst, file.Name)
 	cleanedDst := filepath.Clean(dst)
 	cleanedPath := filepath.Clean(path)
-	
+
 	// Skip the current directory entry
 	if file.Name == "./" || file.Name == "." {
 		return nil
 	}
-	
+
 	// Prevent directory traversal attacks
-	if !strings.HasPrefix(cleanedPath, cleanedDst) || 
+	if !strings.HasPrefix(cleanedPath, cleanedDst) ||
 		(cleanedPath != cleanedDst && !strings.HasPrefix(cleanedPath, cleanedDst+string(os.PathSeparator))) {
 		return fmt.Errorf("invalid file path: %s", file.Name)
 	}
@@ -190,13 +196,8 @@ func NewTarGzExtractor() *TarGzExtractor {
 }
 
 func (e *TarGzExtractor) Extract(src io.Reader, dst string) error {
-	data, err := io.ReadAll(src)
-	if err != nil {
-		return fmt.Errorf("failed to read source data: %w", err)
-	}
-
-	multiExtractor := New()
-	return multiExtractor.extractTarGz(data, dst)
+	optimized := NewOptimized()
+	return optimized.Extract(src, dst)
 }
 
 type ZipExtractor struct{}
@@ -206,11 +207,6 @@ func NewZipExtractor() *ZipExtractor {
 }
 
 func (e *ZipExtractor) Extract(src io.Reader, dst string) error {
-	data, err := io.ReadAll(src)
-	if err != nil {
-		return fmt.Errorf("failed to read source data: %w", err)
-	}
-
-	multiExtractor := New()
-	return multiExtractor.extractZip(data, dst)
+	optimized := NewOptimized()
+	return optimized.Extract(src, dst)
 }
