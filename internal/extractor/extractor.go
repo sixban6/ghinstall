@@ -7,6 +7,7 @@ import (
 	"compress/gzip"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,8 +30,8 @@ func (m MultiExtractor) WithCache() *MultiExtractor {
 func New() Extractor {
 	// Return system extractor with fallback for best performance
 	//return NewSystemWithFallback()
-	return NewLegacy()
-	//return NewOptimized()
+	//return NewLegacy()
+	return NewOptimized()
 }
 
 func NewLegacy() *MultiExtractor {
@@ -60,7 +61,7 @@ func (e *MultiExtractor) Extract(src io.Reader, dst string) error {
 		}
 		defer os.Remove(tmp.Name())
 		defer tmp.Close()
-		fmt.Printf("缓存到磁盘完成，耗时 %v，大小 %d 字节\n", time.Since(start), fileSize(tmp))
+		log.Printf("Download Finished，Cost %v，Size %d Bytes\n", time.Since(start), fileSize(tmp))
 		// 把文件重新变成 Reader
 		src = tmp
 	}
