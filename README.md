@@ -1,5 +1,8 @@
 # GHInstall
-
+[![Release](https://img.shields.io/github/v/release/sixban6/ghinstall)](https://github.com/sixban6/ghinstall/releases)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/sixban6/ghinstall)](https://golang.org/)
+[![License](https://img.shields.io/github/license/sixban6/ghinstall)](https://github.com/sixban6/ghinstall/blob/main/LICENSE)
+[![Build Status](https://img.shields.io/github/workflow/status/sixban6/ghinstall/Release)](https://github.com/sixban6/ghinstall/actions)
 ## Installation
 
 ```bash
