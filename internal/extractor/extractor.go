@@ -19,8 +19,8 @@ type MultiExtractor struct{}
 
 func New() Extractor {
 	// Return system extractor with fallback for best performance
-	//return NewSystemWithFallback()
-	return NewOptimized()
+	return NewSystemWithFallback()
+	//return NewOptimized()
 }
 
 func NewLegacy() *MultiExtractor {
