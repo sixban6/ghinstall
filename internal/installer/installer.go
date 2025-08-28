@@ -35,16 +35,16 @@ func New(f release.Finder, d downloader.Client, e extractor.Extractor) *Installe
 	}
 }
 
-func (i *Installer) Install(ctx context.Context, cfg *config.Config) error {
+func (i *Installer) Install(ctx context.Context, cfg *config.Config, filter release.AssetFilter) error {
 	for _, repo := range cfg.Github {
-		if err := i.installRepo(ctx, cfg, repo); err != nil {
+		if err := i.installRepo(ctx, cfg, repo, filter); err != nil {
 			return fmt.Errorf("failed to install %s: %w", repo.URL, err)
 		}
 	}
 	return nil
 }
 
-func (i *Installer) installRepo(ctx context.Context, cfg *config.Config, repo config.Repo) error {
+func (i *Installer) installRepo(ctx context.Context, cfg *config.Config, repo config.Repo, filter release.AssetFilter) error {
 	log.Printf("Installing %s to %s", repo.URL, repo.OutputDir)
 
 	owner, repoName, err := config.ParseRepoURL(repo.URL)
@@ -60,9 +60,9 @@ func (i *Installer) installRepo(ctx context.Context, cfg *config.Config, repo co
 
 	log.Printf("Found release: %s", rel.TagName)
 
-	asset := rel.FindAsset()
-	if asset == nil {
-		return fmt.Errorf("no suitable asset found in release %s", rel.TagName)
+	asset, err := filter(rel.Assets)
+	if err != nil {
+		return fmt.Errorf("no suitable asset found in release %s: %w", rel.TagName, err)
 	}
 
 	log.Printf("Selected asset: %s (%.2f MB)", asset.Name, float64(asset.Size)/(1024*1024))
@@ -88,10 +88,10 @@ func (i *Installer) installRepo(ctx context.Context, cfg *config.Config, repo co
 	return nil
 }
 
-func (i *Installer) InstallRepo(ctx context.Context, cfg *config.Config, repoURL, outputDir string) error {
+func (i *Installer) InstallRepo(ctx context.Context, cfg *config.Config, repoURL, outputDir string, filter release.AssetFilter) error {
 	repo := config.Repo{
 		URL:       repoURL,
 		OutputDir: outputDir,
 	}
-	return i.installRepo(ctx, cfg, repo)
+	return i.installRepo(ctx, cfg, repo, filter)
 }
