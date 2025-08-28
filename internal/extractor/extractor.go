@@ -3,10 +3,7 @@ package extractor
 import (
 	"archive/tar"
 	"archive/zip"
-	"bufio"
-	"bytes"
 	"compress/gzip"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -14,211 +11,65 @@ import (
 	"strings"
 )
 
-// ------------------------------------------------------------------
-// 公共接口
-// ------------------------------------------------------------------
-
 type Extractor interface {
 	Extract(src io.Reader, dst string) error
 }
 
-// New 返回一个默认实现（目前就是 MultiExtractor）
-func New() Extractor { return &MultiExtractor{} }
+type MultiExtractor struct {
+	cacheFirst bool // true = 先落盘再解压
+}
 
-// ------------------------------------------------------------------
-// 多格式实现
-// ------------------------------------------------------------------
+func (m MultiExtractor) WithCache() *MultiExtractor {
+	m.cacheFirst = true
+	return &m
+}
 
-type MultiExtractor struct{}
+func New() Extractor {
+	// Return system extractor with fallback for best performance
+	return NewSystemWithFallback()
+	//return NewOptimized()
+}
 
-func (m *MultiExtractor) Extract(src io.Reader, dst string) error {
+func NewLegacy() *MultiExtractor {
+	return &MultiExtractor{}
+}
+
+func (e *MultiExtractor) Extract(src io.Reader, dst string) error {
 	if err := os.MkdirAll(dst, 0755); err != nil {
-		return fmt.Errorf("create dst dir: %w", err)
+		return fmt.Errorf("failed to create destination directory %s: %w", dst, err)
 	}
 
-	// 预读前 512 字节做格式嗅探
-	peek, err := peekReader(src, 512)
+	// 如果启用了先缓存
+	if e.cacheFirst {
+		tmp, err := writeToTemp(src) // 复用已有函数
+		if err != nil {
+			return err
+		}
+		defer os.Remove(tmp.Name())
+		defer tmp.Close()
+
+		// 把文件重新变成 Reader
+		src = tmp
+	}
+
+	data, err := io.ReadAll(src)
 	if err != nil {
-		return fmt.Errorf("peek header: %w", err)
+		return fmt.Errorf("failed to read source data: %w", err)
 	}
 
-	// 根据嗅探结果选择子提取器
-	var sub Extractor
-	switch detectFormat(peek) {
-	case "zip":
-		sub = &zipExtractor{}
-	case "tar":
-		sub = &tarExtractor{compressed: false}
+	format, err := detectFormat(data)
+	if err != nil {
+		return fmt.Errorf("failed to detect archive format: %w", err)
+	}
+
+	switch format {
 	case "tar.gz", "tgz":
-		sub = &tarExtractor{compressed: true}
+		return e.extractTarGz(data, dst)
+	case "zip":
+		return e.extractZip(data, dst)
 	default:
-		return errors.New("unsupported archive format")
+		return fmt.Errorf("unsupported archive format: %s", format)
 	}
-
-	// 把预读的数据塞回去，再交给子提取器
-	full := io.MultiReader(bytes.NewReader(peek), src)
-	return sub.Extract(full, dst)
-}
-
-// ------------------------------------------------------------------
-// 格式嗅探
-// ------------------------------------------------------------------
-
-func detectFormat(header []byte) string {
-	if len(header) < 4 {
-		return ""
-	}
-	// zip 签名
-	if bytes.HasPrefix(header, []byte("PK\x03\x04")) {
-		return "zip"
-	}
-	// gzip 签名
-	if bytes.HasPrefix(header, []byte{0x1f, 0x8b}) {
-		return "tar.gz"
-	}
-	// ustar 或 老 tar
-	if bytes.HasPrefix(header[257:], []byte("ustar")) || header[0] == 0 {
-		return "tar"
-	}
-	return ""
-}
-
-// ------------------------------------------------------------------
-// 工具
-// ------------------------------------------------------------------
-
-// 预读 n 字节
-func peekReader(r io.Reader, n int) ([]byte, error) {
-	return bufio.NewReader(r).Peek(n)
-}
-
-// 安全路径校验：保证 path 必须位于 root 之内
-func inside(root, path string) bool {
-	rel, err := filepath.Rel(root, path)
-	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator))
-}
-
-// ------------------------------------------------------------------
-// zip 专用实现
-// ------------------------------------------------------------------
-
-type zipExtractor struct{}
-
-func (z *zipExtractor) Extract(src io.Reader, dst string) error {
-	// zip.NewReader 需要 io.ReaderAt + size
-	// 先写入临时文件，再打开
-	tmp, err := writeToTemp(src)
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name())
-	defer tmp.Close()
-
-	stat, _ := tmp.Stat()
-	r, err := zip.NewReader(tmp, stat.Size())
-	if err != nil {
-		return fmt.Errorf("zip reader: %w", err)
-	}
-
-	for _, f := range r.File {
-		if err := z.extractFile(f, dst); err != nil {
-			return fmt.Errorf("extract %s: %w", f.Name, err)
-		}
-	}
-	return nil
-}
-
-func (z *zipExtractor) extractFile(f *zip.File, dst string) error {
-	path := filepath.Join(dst, filepath.FromSlash(f.Name))
-	if !inside(dst, path) {
-		return fmt.Errorf("illegal path: %s", f.Name)
-	}
-
-	if f.FileInfo().IsDir() {
-		return os.MkdirAll(path, f.Mode())
-	}
-
-	rc, err := f.Open()
-	if err != nil {
-		return err
-	}
-	defer rc.Close()
-
-	return copyFile(rc, path, f.Mode())
-}
-
-// ------------------------------------------------------------------
-// tar / tar.gz 专用实现
-// ------------------------------------------------------------------
-
-type tarExtractor struct {
-	compressed bool
-}
-
-func (t *tarExtractor) Extract(src io.Reader, dst string) error {
-	if t.compressed {
-		gzr, err := gzip.NewReader(src)
-		if err != nil {
-			return fmt.Errorf("gzip: %w", err)
-		}
-		defer gzr.Close()
-		src = gzr
-	}
-
-	tr := tar.NewReader(src)
-	for {
-		hdr, err := tr.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return fmt.Errorf("tar read: %w", err)
-		}
-		if err := t.extractEntry(tr, hdr, dst); err != nil {
-			return fmt.Errorf("tar entry %s: %w", hdr.Name, err)
-		}
-	}
-	return nil
-}
-
-func (t *tarExtractor) extractEntry(tr *tar.Reader, hdr *tar.Header, dst string) error {
-	path := filepath.Join(dst, filepath.FromSlash(hdr.Name))
-	if !inside(dst, path) {
-		return fmt.Errorf("illegal path: %s", hdr.Name)
-	}
-
-	switch hdr.Typeflag {
-	case tar.TypeDir:
-		return os.MkdirAll(path, hdr.FileInfo().Mode())
-	case tar.TypeReg:
-		return copyFile(tr, path, hdr.FileInfo().Mode())
-	case tar.TypeSymlink:
-		target := filepath.FromSlash(hdr.Linkname)
-		absTarget := filepath.Join(filepath.Dir(path), target)
-		if !inside(dst, absTarget) {
-			return fmt.Errorf("illegal symlink target: %s", target)
-		}
-		return os.Symlink(target, path)
-	default:
-		return nil
-	}
-}
-
-// ------------------------------------------------------------------
-// 通用文件写出
-// ------------------------------------------------------------------
-
-func copyFile(r io.Reader, path string, mode os.FileMode) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		return err
-	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	_, err = io.Copy(f, r)
-	return err
 }
 
 func writeToTemp(r io.Reader) (*os.File, error) {
@@ -236,4 +87,163 @@ func writeToTemp(r io.Reader) (*os.File, error) {
 		return nil, err
 	}
 	return tmp, nil
+}
+
+func detectFormat(data []byte) (string, error) {
+	if len(data) < 4 {
+		return "", fmt.Errorf("file too small to detect format")
+	}
+
+	if data[0] == 0x1f && data[1] == 0x8b {
+		return "tar.gz", nil
+	}
+
+	if data[0] == 'P' && data[1] == 'K' && data[2] == 0x03 && data[3] == 0x04 {
+		return "zip", nil
+	}
+
+	return "", fmt.Errorf("unknown archive format")
+}
+
+func (e *MultiExtractor) extractTarGz(data []byte, dst string) error {
+	gzReader, err := gzip.NewReader(strings.NewReader(string(data)))
+	if err != nil {
+		return fmt.Errorf("failed to create gzip reader: %w", err)
+	}
+	defer gzReader.Close()
+
+	tarReader := tar.NewReader(gzReader)
+
+	for {
+		header, err := tarReader.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("failed to read tar entry: %w", err)
+		}
+
+		if err := e.extractTarEntry(tarReader, header, dst); err != nil {
+			return fmt.Errorf("failed to extract tar entry %s: %w", header.Name, err)
+		}
+	}
+
+	return nil
+}
+
+func (e *MultiExtractor) extractTarEntry(reader *tar.Reader, header *tar.Header, dst string) error {
+	path := filepath.Join(dst, header.Name)
+	cleanedDst := filepath.Clean(dst)
+	cleanedPath := filepath.Clean(path)
+
+	// Skip the current directory entry
+	if header.Name == "./" || header.Name == "." {
+		return nil
+	}
+
+	// Prevent directory traversal attacks
+	if !strings.HasPrefix(cleanedPath, cleanedDst) ||
+		(cleanedPath != cleanedDst && !strings.HasPrefix(cleanedPath, cleanedDst+string(os.PathSeparator))) {
+		return fmt.Errorf("invalid file path: %s", header.Name)
+	}
+
+	switch header.Typeflag {
+	case tar.TypeDir:
+		return os.MkdirAll(path, os.FileMode(header.Mode))
+	case tar.TypeReg:
+		return e.extractFile(reader, path, os.FileMode(header.Mode))
+	case tar.TypeSymlink:
+		linkTarget := header.Linkname
+		if !strings.HasPrefix(filepath.Join(dst, linkTarget), dst) {
+			return fmt.Errorf("invalid symlink target: %s", linkTarget)
+		}
+		return os.Symlink(linkTarget, path)
+	default:
+		return nil
+	}
+}
+
+func (e *MultiExtractor) extractZip(data []byte, dst string) error {
+	reader, err := zip.NewReader(strings.NewReader(string(data)), int64(len(data)))
+	if err != nil {
+		return fmt.Errorf("failed to create zip reader: %w", err)
+	}
+
+	for _, file := range reader.File {
+		if err := e.extractZipEntry(file, dst); err != nil {
+			return fmt.Errorf("failed to extract zip entry %s: %w", file.Name, err)
+		}
+	}
+
+	return nil
+}
+
+func (e *MultiExtractor) extractZipEntry(file *zip.File, dst string) error {
+	path := filepath.Join(dst, file.Name)
+	cleanedDst := filepath.Clean(dst)
+	cleanedPath := filepath.Clean(path)
+
+	// Skip the current directory entry
+	if file.Name == "./" || file.Name == "." {
+		return nil
+	}
+
+	// Prevent directory traversal attacks
+	if !strings.HasPrefix(cleanedPath, cleanedDst) ||
+		(cleanedPath != cleanedDst && !strings.HasPrefix(cleanedPath, cleanedDst+string(os.PathSeparator))) {
+		return fmt.Errorf("invalid file path: %s", file.Name)
+	}
+
+	if file.FileInfo().IsDir() {
+		return os.MkdirAll(path, file.FileInfo().Mode())
+	}
+
+	fileReader, err := file.Open()
+	if err != nil {
+		return fmt.Errorf("failed to open zip file entry: %w", err)
+	}
+	defer fileReader.Close()
+
+	return e.extractFile(fileReader, path, file.FileInfo().Mode())
+}
+
+func (e *MultiExtractor) extractFile(reader io.Reader, path string, mode os.FileMode) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return fmt.Errorf("failed to create directory for file %s: %w", path, err)
+	}
+
+	outFile, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode)
+	if err != nil {
+		return fmt.Errorf("failed to create file %s: %w", path, err)
+	}
+	defer outFile.Close()
+
+	_, err = io.Copy(outFile, reader)
+	if err != nil {
+		return fmt.Errorf("failed to write file %s: %w", path, err)
+	}
+
+	return nil
+}
+
+type TarGzExtractor struct{}
+
+func NewTarGzExtractor() *TarGzExtractor {
+	return &TarGzExtractor{}
+}
+
+func (e *TarGzExtractor) Extract(src io.Reader, dst string) error {
+	optimized := NewOptimized()
+	return optimized.Extract(src, dst)
+}
+
+type ZipExtractor struct{}
+
+func NewZipExtractor() *ZipExtractor {
+	return &ZipExtractor{}
+}
+
+func (e *ZipExtractor) Extract(src io.Reader, dst string) error {
+	optimized := NewOptimized()
+	return optimized.Extract(src, dst)
 }
