@@ -3,7 +3,7 @@ package installer
 import (
 	"context"
 	"fmt"
-	"log"
+	log "github.com/sixban6/ghinstall/internal/logger"
 	"net/http"
 	"time"
 
@@ -62,53 +62,53 @@ func PingGoogle(ctx context.Context) bool {
 }
 
 func (i *Installer) installRepo(ctx context.Context, cfg *config.Config, repo config.Repo, filter release.AssetFilter) error {
-	log.Printf("Installing %s to %s", repo.URL, repo.OutputDir)
+	log.Info("Installing %s to %s", repo.URL, repo.OutputDir)
 
 	owner, repoName, err := config.ParseRepoURL(repo.URL)
 	if err != nil {
 		return fmt.Errorf("failed to parse repository URL: %w", err)
 	}
 
-	log.Printf("Finding latest stable release for %s/%s", owner, repoName)
+	log.Info("Finding latest stable release for %s/%s", owner, repoName)
 	rel, err := i.finder.LatestStable(ctx, owner, repoName)
 	if err != nil {
 		return fmt.Errorf("failed to find latest release: %w", err)
 	}
 
-	log.Printf("Found release: %s", rel.TagName)
+	log.Info("Found release: %s", rel.TagName)
 
 	asset, err := filter(rel.Assets)
 	if err != nil {
 		return fmt.Errorf("no suitable asset found in release %s: %w", rel.TagName, err)
 	}
 
-	log.Printf("Selected asset: %s (%.2f MB)", asset.Name, float64(asset.Size)/(1024*1024))
+	log.Info("Selected asset: %s (%.2f MB)", asset.Name, float64(asset.Size)/(1024*1024))
 	downloadURL := ""
 	if PingGoogle(context.Background()) {
-		log.Printf("google is available")
+		log.Info("google is available")
 		downloadURL = asset.URL
 	} else {
-		log.Printf("google is unavailable")
+		log.Info("google is unavailable")
 		downloadURL = cfg.GetDownloadURL(repo.URL, asset.URL)
 	}
 
 	if downloadURL != asset.URL {
-		log.Printf("Using mirror: %s", downloadURL)
+		log.Info("Using mirror: %s", downloadURL)
 	}
 
-	log.Printf("Downloading %s", downloadURL)
+	log.Info("Downloading %s", downloadURL)
 	reader, err := i.downloader.Download(ctx, downloadURL)
 	if err != nil {
 		return fmt.Errorf("failed to download asset: %w", err)
 	}
 	defer reader.Close()
 
-	log.Printf("Extracting to %s", repo.OutputDir)
+	log.Info("Extracting to %s", repo.OutputDir)
 	if err := i.extractor.Extract(reader, repo.OutputDir); err != nil {
 		return fmt.Errorf("failed to extract archive: %w", err)
 	}
 
-	log.Printf("Successfully installed %s %s to %s", repo.URL, rel.TagName, repo.OutputDir)
+	log.Info("Successfully installed %s %s to %s", repo.URL, rel.TagName, repo.OutputDir)
 	return nil
 }
 

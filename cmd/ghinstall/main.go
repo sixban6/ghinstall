@@ -4,7 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log"
+	log "github.com/sixban6/ghinstall/internal/logger"
 	"os"
 	"time"
 
@@ -17,13 +17,13 @@ func main() {
 	var (
 		configFile = flag.String("config", "", "Path to configuration file")
 		timeout    = flag.Duration("timeout", 5*time.Minute, "Timeout for installation")
-		verbose    = flag.Bool("verbose", false, "Enable verbose logging")
+		verbose    = flag.Bool("verbose", true, "Enable verbose logging")
 		version    = flag.Bool("version", false, "Show version information")
 	)
 	flag.Parse()
 
 	if *version {
-		fmt.Printf("ghinstall version %s\n", appVersion)
+		log.Info("ghinstall version %s\n", appVersion)
 		fmt.Println("A tool for automatically downloading GitHub releases")
 		return
 	}
@@ -32,8 +32,8 @@ func main() {
 		if len(flag.Args()) > 0 {
 			*configFile = flag.Args()[0]
 		} else {
-			fmt.Fprintf(os.Stderr, "Usage: %s [flags] <config-file>\n", os.Args[0])
-			fmt.Fprintf(os.Stderr, "   or: %s -config <config-file>\n", os.Args[0])
+			log.Error("Usage: %s [flags] <config-file>\n", os.Args[0])
+			log.Error("   or: %s -config <config-file>\n", os.Args[0])
 			flag.PrintDefaults()
 			os.Exit(1)
 		}
@@ -47,25 +47,25 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
 	defer cancel()
 
-	log.Printf("Loading configuration from %s", *configFile)
+	log.Info("Loading configuration from %s", *configFile)
 	cfg, err := ghinstall.LoadConfig(*configFile)
 	if err != nil {
-		log.Fatalf("Failed to load configuration: %v", err)
+		log.Error("Failed to load configuration: %v", err)
 	}
 
-	log.Printf("Found %d repositories to install", len(cfg.Github))
-	
+	log.Info("Found %d repositories to install", len(cfg.Github))
+
 	if cfg.MirrorURL != "" {
-		log.Printf("Using GitHub mirror: %s", cfg.MirrorURL)
+		log.Info("Using GitHub mirror: %s", cfg.MirrorURL)
 	}
 
-	log.Printf("Starting installation...")
-	
+	log.Info("Starting installation...")
+
 	start := time.Now()
 	if err := ghinstall.InstallWithConfig(ctx, cfg); err != nil {
-		log.Fatalf("Installation failed: %v", err)
+		log.Error("Installation failed: %v", err)
 	}
-	
+
 	duration := time.Since(start)
-	log.Printf("Installation completed successfully in %v", duration)
+	log.Info("Installation completed successfully in %v", duration)
 }
