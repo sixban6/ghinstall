@@ -11,38 +11,44 @@ go get github.com/sixban6/ghinstall
 ### As a Library
 
 ```go
-package main
+  // 使用默认过滤器（保持向后兼容）
+  err := ghinstall.InstallWithConfig(ctx, cfg)
 
-import (
-    "context"
-    "log"
-    
-    "github.com/sixban6/ghinstall"
-)
+  // 使用自定义过滤器
+  err := ghinstall.InstallWithConfigAndFilter(ctx, cfg, filterFunc)
 
-func main() {
-    // Simple usage with config file
-    err := ghinstall.Install(context.Background(), "config.yaml")
-    if err != nil {
-        log.Fatal(err)
-    }
-    
-    // Or use programmatically
-    cfg := &ghinstall.Config{
-        Github: []ghinstall.Repo{
-            {
-                URL:       "https://github.com/sixban6/singgen",
-                OutputDir: "/root",
-            },
-        },
-        MirrorURL: "https://ghfast.top",
-    }
-    
-    err = ghinstall.InstallWithConfig(context.Background(), cfg)
-    if err != nil {
-        log.Fatal(err)
-    }
-}
+  使用示例:
+
+  // 1. 按操作系统和架构过滤
+  filter := ghinstall.CombinedFilter(
+      ghinstall.ByOS("linux"),
+      ghinstall.ByArch("amd64"),
+  )
+  err := ghinstall.InstallWithConfigAndFilter(ctx, cfg, filter)
+
+  // 2. 按文件名模式过滤
+  filter := ghinstall.ByNamePattern("sing-box", "linux", "amd64")
+  err := ghinstall.InstallWithConfigAndFilter(ctx, cfg, filter)
+
+  // 3. 自定义过滤逻辑
+  filter := ghinstall.CustomFilter(func(assets []ghinstall.Asset) (*ghinstall.Asset, error) {
+      for _, asset := range assets {
+          if strings.Contains(asset.Name, "linux-amd64") &&
+             strings.HasSuffix(asset.Name, ".tar.gz") {
+              return &asset, nil
+          }
+      }
+      return nil, fmt.Errorf("找不到 linux-amd64 tar.gz 文件")
+  })
+
+  预定义过滤器:
+  - DefaultAssetFilter() - 原始行为
+  - ByNamePattern(patterns...) - 按文件名模式
+  - ByOS(os) - 按操作系统
+  - ByArch(arch) - 按架构
+  - BySize(largest) - 按文件大小
+  - CombinedFilter(filters...) - 组合多个过滤器
+  - CustomFilter(func) - 完全自定义
 ```
 
 ### Configuration File

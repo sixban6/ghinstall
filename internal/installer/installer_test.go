@@ -165,7 +165,8 @@ func TestInstaller_Install(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			installer := New(tt.finder, tt.downloader, tt.extractor)
-			err := installer.Install(context.Background(), tt.config)
+			filter := release.DefaultFilter()
+			err := installer.Install(context.Background(), tt.config, filter)
 
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Installer.Install() error = %v, wantErr %v", err, tt.wantErr)
@@ -211,6 +212,7 @@ func TestInstaller_InstallRepo(t *testing.T) {
 		cfg,
 		"https://github.com/owner/repo",
 		"/tmp/single",
+		release.DefaultFilter(),
 	)
 
 	if err != nil {
@@ -251,7 +253,7 @@ func TestInstaller_Install_WithMirror(t *testing.T) {
 		&mockExtractor{},
 	)
 
-	err := installer.Install(context.Background(), cfg)
+	err := installer.Install(context.Background(), cfg, release.DefaultFilter())
 	if err != nil {
 		t.Errorf("Installer.Install() with mirror error = %v", err)
 	}
@@ -295,7 +297,7 @@ func TestInstaller_Install_MultipleRepos(t *testing.T) {
 		mockExt,
 	)
 
-	err := installer.Install(context.Background(), cfg)
+	err := installer.Install(context.Background(), cfg, release.DefaultFilter())
 	if err != nil {
 		t.Errorf("Installer.Install() with multiple repos error = %v", err)
 	}
@@ -347,7 +349,7 @@ func TestInstaller_Install_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 
-	err := installer.Install(ctx, cfg)
+	err := installer.Install(ctx, cfg, release.DefaultFilter())
 	if err == nil {
 		t.Error("Expected context cancellation error, got nil")
 	}
