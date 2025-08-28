@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/http"
+	"time"
 
 	"github.com/sixban6/ghinstall/internal/config"
 	"github.com/sixban6/ghinstall/internal/downloader"
@@ -44,6 +46,21 @@ func (i *Installer) Install(ctx context.Context, cfg *config.Config, filter rele
 	return nil
 }
 
+func PingGoogle(ctx context.Context) bool {
+	// 如果外部没传超时，自己补一个 3s 的默认超时，防止阻塞
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	req, _ := http.NewRequestWithContext(ctx, http.MethodHead, "https://google.com", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+
+	return resp.StatusCode < 400
+}
+
 func (i *Installer) installRepo(ctx context.Context, cfg *config.Config, repo config.Repo, filter release.AssetFilter) error {
 	log.Printf("Installing %s to %s", repo.URL, repo.OutputDir)
 
@@ -66,8 +83,13 @@ func (i *Installer) installRepo(ctx context.Context, cfg *config.Config, repo co
 	}
 
 	log.Printf("Selected asset: %s (%.2f MB)", asset.Name, float64(asset.Size)/(1024*1024))
+	downloadURL := ""
+	if PingGoogle(context.Background()) {
+		downloadURL = asset.URL
+	} else {
+		downloadURL = cfg.GetDownloadURL(repo.URL, asset.URL)
+	}
 
-	downloadURL := cfg.GetDownloadURL(repo.URL, asset.URL)
 	if downloadURL != asset.URL {
 		log.Printf("Using mirror: %s", downloadURL)
 	}
