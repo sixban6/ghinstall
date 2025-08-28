@@ -6,8 +6,8 @@ import (
 	"bytes"
 	"compress/gzip"
 	"fmt"
+	log "github.com/sixban6/ghinstall/internal/logger"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -61,7 +61,7 @@ func (e *MultiExtractor) Extract(src io.Reader, dst string) error {
 		}
 		defer os.Remove(tmp.Name())
 		defer tmp.Close()
-		log.Printf("Download Finished，Cost %v，Size %d Bytes\n", time.Since(start), fileSize(tmp))
+		log.Info("Download Finished，Cost %v，Size %d Bytes\n", time.Since(start), fileSize(tmp))
 		// 把文件重新变成 Reader
 		src = tmp
 	}
