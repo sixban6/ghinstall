@@ -17,7 +17,7 @@
 
 # Go workspace file
 go.work
-
+goinstall-cli
 # IDE
 .vscode/
 .idea/
