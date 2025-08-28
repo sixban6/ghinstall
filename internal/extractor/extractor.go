@@ -221,10 +221,6 @@ func copyFile(r io.Reader, path string, mode os.FileMode) error {
 	return err
 }
 
-// ------------------------------------------------------------------
-// 临时文件帮助（供 zip 使用）
-// ------------------------------------------------------------------
-
 func writeToTemp(r io.Reader) (*os.File, error) {
 	tmp, err := os.CreateTemp("", "extract-*.tmp")
 	if err != nil {
