@@ -1,0 +1,4 @@
+github:  
+  - url: "https://github.com/sixban6/singgen"
+    output_dir: "/tmp/ghinstall-test"
+mirror_url: "https://ghfast.top"
