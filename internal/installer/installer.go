@@ -85,8 +85,10 @@ func (i *Installer) installRepo(ctx context.Context, cfg *config.Config, repo co
 	log.Printf("Selected asset: %s (%.2f MB)", asset.Name, float64(asset.Size)/(1024*1024))
 	downloadURL := ""
 	if PingGoogle(context.Background()) {
+		log.Printf("google is available")
 		downloadURL = asset.URL
 	} else {
+		log.Printf("google is unavailable")
 		downloadURL = cfg.GetDownloadURL(repo.URL, asset.URL)
 	}
 
