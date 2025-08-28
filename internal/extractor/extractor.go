@@ -30,8 +30,8 @@ func (m MultiExtractor) WithCache() *MultiExtractor {
 func New() Extractor {
 	// Return system extractor with fallback for best performance
 	//return NewSystemWithFallback()
-	//return NewLegacy()
-	return NewOptimized()
+	return NewLegacy()
+	//return NewOptimized()
 }
 
 func NewLegacy() *MultiExtractor {
