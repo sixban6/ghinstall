@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
-	"syscall"
 )
 
 // SystemExtractor uses system commands for better performance
@@ -121,23 +120,8 @@ func (e *SystemExtractor) extractWithTar(archivePath, dst string) error {
 		return optimized.Extract(file, dst)
 	}
 
-	// Use system tar command with optimizations
-	cmd := exec.Command("tar", 
-		"-xzf", archivePath,  // extract gzip compressed tar
-		"-C", dst,            // change to directory
-		"--no-same-owner",    // don't try to restore ownership
-	)
-	
-	// Set process group for better signal handling
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	
-	// Capture both stdout and stderr
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("tar command failed: %w, output: %s", err, string(output))
-	}
-
-	return nil
+	// Use system tar command - implementation in platform-specific files
+	return e.extractWithTar(archivePath, dst)
 }
 
 func (e *SystemExtractor) extractWithPowerShell(archivePath, dst string) error {
@@ -186,41 +170,9 @@ func (e *SystemExtractor) extractZipSystem(archivePath, dst string) error {
 	}
 }
 
-func (e *SystemExtractor) extractZipLinux(archivePath, dst string) error {
-	// Try unzip command first
-	if _, err := exec.LookPath("unzip"); err == nil {
-		cmd := exec.Command("unzip", "-q", "-o", archivePath, "-d", dst)
-		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-		
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			return fmt.Errorf("unzip command failed: %w, output: %s", err, string(output))
-		}
-		return nil
-	}
-
-	// Fallback to Go implementation
-	file, err := os.Open(archivePath)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-	
-	optimized := NewOptimized()
-	return optimized.Extract(file, dst)
-}
-
-func (e *SystemExtractor) extractZipDarwin(archivePath, dst string) error {
-	// macOS has built-in unzip
-	cmd := exec.Command("unzip", "-q", "-o", archivePath, "-d", dst)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("unzip command failed: %w, output: %s", err, string(output))
-	}
-	return nil
-}
+// Platform-specific zip extraction functions are now in separate files:
+// - system_extractor_unix.go (for Linux/macOS)
+// - system_extractor_windows.go (for Windows)
 
 func (e *SystemExtractor) extractZipWindows(archivePath, dst string) error {
 	// Use PowerShell's Expand-Archive
