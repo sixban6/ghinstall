@@ -9,7 +9,7 @@ env:
 
 jobs:
   release:
-    runs-on: ${{ matrix.goos == 'windows' && 'windows-2022' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     
     strategy:
       matrix:

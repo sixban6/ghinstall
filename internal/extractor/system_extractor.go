@@ -120,8 +120,23 @@ func (e *SystemExtractor) extractWithTar(archivePath, dst string) error {
 		return optimized.Extract(file, dst)
 	}
 
-	// Use system tar command - implementation in platform-specific files
-	return e.extractWithTar(archivePath, dst)
+	// Use system tar command
+	cmd := exec.Command("tar", 
+		"-xzf", archivePath,  // extract gzip compressed tar
+		"-C", dst,            // change to directory
+		"--no-same-owner",    // don't try to restore ownership
+	)
+	
+	// Set process attributes (platform-specific implementation)
+	setProcAttr(cmd)
+	
+	// Capture both stdout and stderr
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("tar command failed: %w, output: %s", err, string(output))
+	}
+	
+	return nil
 }
 
 func (e *SystemExtractor) extractWithPowerShell(archivePath, dst string) error {
